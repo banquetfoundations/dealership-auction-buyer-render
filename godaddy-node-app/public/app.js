@@ -551,33 +551,6 @@ function normalizeResearchComparable(comp, vehicleId, vehicle, index) {
   )[0];
 }
 
-function getVehicleSearchQuery(vehicle) {
-  return [
-    vehicle.year,
-    vehicle.make,
-    vehicle.model,
-    vehicle.trim,
-    "Ontario",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function getCompSearchLinks(vehicle) {
-  const query = encodeURIComponent(getVehicleSearchQuery(vehicle));
-
-  return [
-    {
-      label: "Search AutoTrader",
-      url: `https://www.autotrader.ca/cars/?q=${query}`,
-    },
-    {
-      label: "Search CarGurus",
-      url: `https://www.cargurus.ca/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip=${encodeURIComponent(vehicle.postalCode || "N6A 1A1")}&searchChanged=true&keywords=${query}`,
-    },
-  ];
-}
-
 function getApprovedComparables(vehicle) {
   return vehicle.comparables.filter((comp) => comp.approved && hasComparableEvidence(comp));
 }

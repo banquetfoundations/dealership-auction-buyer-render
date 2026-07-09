@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: dealership-auction-buyer
+    env: node
+    rootDir: godaddy-node-app
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_API_KEY
+        sync: false

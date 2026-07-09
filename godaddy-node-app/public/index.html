@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dealership Auction Buyer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <aside class="side-nav" aria-label="Auction Buyer navigation">
+        <div class="brand-lockup">
+          <strong>AUCTION <span>DESK</span></strong>
+          <small>Powered by Maple Ridge Motors</small>
+        </div>
+
+        <nav class="nav-list">
+          <a class="active" href="#dashboard"><span>1</span>Overview</a>
+          <a href="#filters"><span>2</span>Filter run</a>
+          <a href="#review"><span>3</span>Review vehicles</a>
+          <a href="#valuation"><span>4</span>Market comps</a>
+          <a href="#bids"><span>5</span>Bid list</a>
+        </nav>
+
+        <div class="dealer-card">
+          <strong>Maple Ridge Motors</strong>
+          <span>London, ON (N6A 1A1)</span>
+        </div>
+      </aside>
+
+      <main class="app-shell">
+        <section id="dashboard" class="toolbar" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">Run List</p>
+            <h1 id="page-title">Auction buying desk</h1>
+            <p class="page-note">Today’s run list, filtered into review, bid, and outcome decisions.</p>
+          </div>
+          <div class="toolbar-actions">
+            <span id="saveStatus" class="save-status">Saved locally</span>
+            <button id="resetData" class="secondary-button" type="button" hidden>
+              Reset demo
+            </button>
+            <button id="copyAccepted" class="secondary-button" type="button" hidden>
+              Copy ready VINs
+            </button>
+            <button id="downloadSingleHtml" class="secondary-button" type="button" hidden>
+              Download HTML
+            </button>
+            <label>
+              <span>Import source</span>
+              <select id="uploadPreset">
+                <option value="auto">Auto detect</option>
+                <option value="autolane">AutoLane</option>
+                <option value="openlane">OPENLANE</option>
+                <option value="traderev">TradeRev</option>
+                <option value="eblock">EBlock</option>
+              </select>
+            </label>
+            <label class="upload-control">
+              <span>Upload file</span>
+              <input id="csvUpload" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+            </label>
+          </div>
+        </section>
+
+        <section id="importPreview" class="import-preview" hidden aria-label="Import preview">
+          <header class="section-header">
+            <div>
+              <p class="eyebrow">Import Preview</p>
+              <h2 id="importFileName">Auction CSV</h2>
+              <p class="page-note">Review the parsed vehicles before replacing the current run list.</p>
+            </div>
+            <div class="toolbar-actions">
+              <label>
+                <span>Source preset</span>
+                <select id="importPreset">
+                  <option value="auto">Auto detect</option>
+                  <option value="autolane">AutoLane</option>
+                  <option value="openlane">OPENLANE</option>
+                  <option value="traderev">TradeRev</option>
+                  <option value="eblock">EBlock</option>
+                </select>
+              </label>
+              <button id="cancelImport" class="secondary-button" type="button">Cancel</button>
+              <button id="applyImport" type="button">Apply import</button>
+            </div>
+          </header>
+
+          <div class="import-summary" aria-label="Import validation summary">
+            <div>
+              <span id="importTotal">0</span>
+              <small>rows parsed</small>
+            </div>
+            <div>
+              <span id="importValid">0</span>
+              <small>valid vehicles</small>
+            </div>
+            <div>
+              <span id="importFiltered">0</span>
+              <small>filtered out</small>
+            </div>
+            <div>
+              <span id="importIssues">0</span>
+              <small>issues</small>
+            </div>
+          </div>
+
+          <div id="importIssuesList" class="import-issues"></div>
+
+          <section class="mapping-panel" aria-labelledby="mapping-title">
+            <div class="mapping-header">
+              <div>
+                <p class="eyebrow">Column Mapping</p>
+                <h3 id="mapping-title">Match auction columns</h3>
+              </div>
+              <div class="toolbar-actions">
+                <span id="mappingStatus" class="save-status">Auto mapping</span>
+                <button id="saveMapping" class="secondary-button" type="button">Save mapping</button>
+                <button id="clearMapping" class="secondary-button" type="button">Clear saved</button>
+              </div>
+            </div>
+            <div id="mappingFields" class="mapping-fields"></div>
+          </section>
+
+          <div class="import-table-wrap">
+            <table class="import-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>VIN</th>
+                  <th>Vehicle</th>
+                  <th>Year</th>
+                  <th>Km</th>
+                  <th>Auction</th>
+                  <th>Issues</th>
+                </tr>
+              </thead>
+              <tbody id="importRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="lastImportPanel" class="last-import-panel" hidden aria-label="Last import result">
+        </section>
+
+        <section id="costs" class="settings-panel" aria-label="Bid math settings">
+          <header>
+            <div>
+              <p class="eyebrow">Bid Settings</p>
+              <h2>Buying math</h2>
+            </div>
+            <button id="resetBidSettings" class="secondary-button" type="button">Reset settings</button>
+          </header>
+          <div class="settings-grid">
+            <label>
+              <span>Profit target</span>
+              <input id="fixedProfit" data-bid-setting="fixedProfit" type="number" min="0" step="100" />
+            </label>
+            <label>
+              <span>Recon</span>
+              <input id="reconCost" data-bid-setting="recon" type="number" min="0" step="100" />
+            </label>
+            <label>
+              <span>Auction fees</span>
+              <input id="auctionFees" data-bid-setting="auctionFees" type="number" min="0" step="100" />
+            </label>
+            <label>
+              <span>Clean stretch</span>
+              <input id="cleanStretch" data-bid-setting="cleanStretch" type="number" min="0" step="100" />
+            </label>
+            <label>
+              <span>Medium risk buffer</span>
+              <input id="mediumRiskBuffer" data-risk-setting="medium" type="number" min="0" step="100" />
+            </label>
+            <label>
+              <span>High risk buffer</span>
+              <input id="highRiskBuffer" data-risk-setting="high" type="number" min="0" step="100" />
+            </label>
+          </div>
+        </section>
+
+        <section id="filters" class="filter-panel" aria-label="Vehicle filters">
+        <label>
+          <span>Year from</span>
+          <input id="minYear" type="number" min="1980" max="2030" value="2015" />
+        </label>
+        <label>
+          <span>Year to</span>
+          <input id="maxYear" type="number" min="1980" max="2030" value="2022" />
+        </label>
+        <label>
+          <span>Max km</span>
+          <input id="maxKm" type="number" min="0" step="1000" value="150000" />
+        </label>
+        <label class="search-field">
+          <span>Search</span>
+          <input id="searchText" type="search" placeholder="Make, model, trim" />
+        </label>
+        <label>
+          <span>Auction site</span>
+          <select id="auctionSite">
+            <option value="all" selected>All sites</option>
+            <option value="autolane">AutoLane</option>
+            <option value="eblock">EBlock</option>
+            <option value="openlane">OPENLANE</option>
+            <option value="traderev">TradeRev</option>
+          </select>
+        </label>
+        <label>
+          <span>Auction results</span>
+          <select id="resultMode">
+            <option value="qualified" selected>Qualified only</option>
+            <option value="excluded">Excluded only</option>
+            <option value="all">All vehicles</option>
+          </select>
+        </label>
+        <button id="resetFilters" type="button">Reset</button>
+        </section>
+
+        <section id="review" class="workspace-grid" aria-label="Auction review workflow">
+        <section class="table-wrap" aria-label="Auction vehicles">
+          <table>
+            <thead>
+              <tr>
+                <th>Run #</th>
+                <th>VIN</th>
+                <th>Vehicle</th>
+                <th>Year</th>
+                <th>Km</th>
+                <th>CARFAX</th>
+                <th>Damage</th>
+                <th>Risk</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="vehicleRows"></tbody>
+          </table>
+        </section>
+
+        <aside id="reviewPanel" class="review-panel" aria-label="Selected vehicle review">
+        </aside>
+        </section>
+
+        <section id="valuation" class="valuation-board" aria-labelledby="valuation-board-title">
+          <header class="section-header">
+            <div>
+              <p class="eyebrow">Market & Comparables</p>
+              <h2 id="valuation-board-title">Comparable market options</h2>
+              <p class="page-note">Select the closest active market options to build the retail consensus.</p>
+            </div>
+          </header>
+
+          <div id="valuationPanel"></div>
+        </section>
+
+        <section id="bids" class="bid-board" aria-labelledby="bid-board-title">
+          <header class="section-header">
+            <div>
+              <p class="eyebrow">Max Bid & Auction Action</p>
+              <h2 id="bid-board-title">Final bid list</h2>
+              <p class="page-note">Priority vehicles only, with max bids generated from selected comparable market options.</p>
+            </div>
+            <div class="bid-header-actions">
+              <button id="copyBidList" class="secondary-button" type="button" hidden>Copy bid list CSV</button>
+              <div class="bid-total-card">
+                <span id="bidListCount">0 vehicles</span>
+                <strong id="bidListTotal">$0</strong>
+              </div>
+            </div>
+          </header>
+
+          <div class="bid-formula-band" aria-label="Max bid formula">
+            <div>
+              <span>Retail value</span>
+              <strong>Market value</strong>
+            </div>
+            <b>-</b>
+            <div>
+              <span>Profit target</span>
+              <strong data-setting-display="fixedProfit">$3,000</strong>
+            </div>
+            <b>-</b>
+            <div>
+              <span>Recon estimate</span>
+              <strong data-setting-display="recon">$1,200</strong>
+            </div>
+            <b>-</b>
+            <div>
+              <span>Auction fees</span>
+              <strong data-setting-display="auctionFees">$800</strong>
+            </div>
+            <b>-</b>
+            <div>
+              <span>Risk buffer</span>
+              <strong>By severity</strong>
+            </div>
+            <b>=</b>
+            <div class="formula-result">
+              <span>Max bid</span>
+              <strong>Approved limit</strong>
+            </div>
+          </div>
+
+          <div class="bid-list-wrap">
+            <table class="bid-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Vehicle</th>
+                  <th>VIN</th>
+                  <th>Risk</th>
+                  <th>Max bid</th>
+                  <th>Stretch bid</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bidRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="outcomes" class="outcome-board" hidden aria-labelledby="outcome-board-title">
+          <header class="section-header">
+            <div>
+              <p class="eyebrow">Outcome Learning</p>
+              <h2 id="outcome-board-title">Bid result and receipt intake</h2>
+              <p class="page-note">Record won/lost results, purchase costs, sale price, and receipts so future recommendations can improve.</p>
+            </div>
+          </header>
+
+          <div id="outcomePanel"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

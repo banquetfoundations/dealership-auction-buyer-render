@@ -236,6 +236,7 @@ let savedMappingPresets = savedState?.savedMappingPresets || {};
 let buyingCosts = { ...DEFAULT_BUYING_COSTS, ...(savedState?.buyingCosts || {}) };
 let riskBuffers = { ...DEFAULT_RISK_BUFFERS, ...(savedState?.riskBuffers || {}) };
 let pendingImport = null;
+const autoResearchInFlight = new Set();
 
 const els = {
   minYear: document.querySelector("#minYear"),
@@ -1502,14 +1503,12 @@ function renderValuationPanel() {
   const confidence = getValuationConfidence(vehicle);
   const approvedCount = getApprovedComparables(vehicle).length;
   const bidMath = getBidMath(vehicle);
-  const researchIsLoading = vehicle.compResearchStatus === "loading";
   const researchClass =
     vehicle.compResearchStatus === "complete"
       ? "good"
       : vehicle.compResearchStatus === "error"
         ? "bad"
         : "neutral";
-  const searchLinks = getCompSearchLinks(vehicle);
 
   els.valuationPanel.innerHTML = `
     <div class="valuation-grid">
@@ -1575,27 +1574,16 @@ function renderValuationPanel() {
 
     <div class="research-panel ${researchClass}">
       <div>
-        <span>Live comp research</span>
+        <span>Automatic live comp research</span>
         <strong>${escapeHtml(
           vehicle.compResearchMessage ||
-            "Use the backend research workflow to pull verified listings with VIN, price, and source URL.",
+            "Select a run-list vehicle and verified live comps will load here automatically.",
         )}</strong>
         ${
           vehicle.compResearchUpdatedAt
             ? `<small>Last checked ${escapeHtml(vehicle.compResearchUpdatedAt)}</small>`
             : ""
         }
-      </div>
-      <div class="research-actions">
-        <button data-research-comps type="button" ${researchIsLoading ? "disabled" : ""}>
-          ${researchIsLoading ? "Researching..." : "Research verified comps"}
-        </button>
-        ${searchLinks
-          .map(
-            (link) =>
-              `<a class="secondary-link" href="${escapeHtml(link.url)}" target="_blank" rel="noopener">${escapeHtml(link.label)}</a>`,
-          )
-          .join("")}
       </div>
     </div>
 
@@ -1992,8 +1980,27 @@ async function requestVerifiedComps(vehicle) {
   throw new Error(lastError || "No comp research backend is connected.");
 }
 
-async function researchSelectedVehicleComps() {
-  const vehicle = vehicles.find((item) => item.id === selectedVehicleId);
+function maybeAutoResearchVehicleComps(vehicleId) {
+  const vehicle = vehicles.find((item) => item.id === vehicleId);
+
+  if (!vehicle || vehicle.compResearchStatus === "loading" || autoResearchInFlight.has(vehicleId)) {
+    return;
+  }
+
+  if (vehicle.comparables.some(hasComparableEvidence)) {
+    return;
+  }
+
+  autoResearchInFlight.add(vehicleId);
+  window.setTimeout(() => {
+    researchSelectedVehicleComps(vehicleId).finally(() => {
+      autoResearchInFlight.delete(vehicleId);
+    });
+  }, 250);
+}
+
+async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
+  const vehicle = vehicles.find((item) => item.id === vehicleId);
 
   if (!vehicle) {
     return;
@@ -2001,7 +2008,7 @@ async function researchSelectedVehicleComps() {
 
   updateVehicleCompResearch(vehicle.id, {
     compResearchStatus: "loading",
-    compResearchMessage: "Searching verified market listings...",
+    compResearchMessage: "Automatically searching verified market listings...",
   });
 
   try {
@@ -2044,7 +2051,7 @@ async function researchSelectedVehicleComps() {
     updateVehicleCompResearch(vehicle.id, {
       compResearchStatus: "error",
       compResearchMessage:
-        "Live comp research backend is not connected yet. Static cPanel HTML cannot securely run LLM/web research by itself.",
+        "Live comp research could not finish. Check the backend key, model access, or listing-source availability.",
       compResearchUpdatedAt: new Date().toLocaleString("en-CA"),
     });
   }
@@ -2685,6 +2692,7 @@ els.vehicleRows.addEventListener("click", (event) => {
   selectedVehicleId = vehicleId;
   saveAppState();
   renderVehicles();
+  maybeAutoResearchVehicleComps(vehicleId);
 });
 
 els.reviewPanel.addEventListener("click", async (event) => {
@@ -2762,12 +2770,6 @@ els.reviewPanel.addEventListener("change", (event) => {
 });
 
 els.valuationPanel.addEventListener("click", (event) => {
-  const researchButton = event.target.closest("[data-research-comps]");
-  if (researchButton) {
-    researchSelectedVehicleComps();
-    return;
-  }
-
   const toggleButton = event.target.closest("[data-comp-toggle]");
 
   if (!toggleButton) {
@@ -3026,6 +3028,7 @@ els.applyImport.addEventListener("click", () => {
   saveAppState("Import saved");
   renderImportPreview();
   renderVehicles();
+  maybeAutoResearchVehicleComps(selectedVehicleId);
 });
 
 els.csvUpload.addEventListener("change", async (event) => {
@@ -3082,3 +3085,4 @@ document.querySelector("#downloadSingleHtml")?.addEventListener("click", () => {
 
 renderVehicles();
 renderImportPreview();
+maybeAutoResearchVehicleComps(selectedVehicleId);

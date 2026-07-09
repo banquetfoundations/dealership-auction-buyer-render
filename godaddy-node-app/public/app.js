@@ -16,12 +16,6 @@ const DEFAULT_BUYING_COSTS = {
   cleanStretch: 1000,
 };
 
-const DEFAULT_RISK_BUFFERS = {
-  low: 0,
-  medium: 1000,
-  high: 3000,
-};
-
 const COMP_RESEARCH_ENDPOINTS = [
   "/api/research-comps",
   "/.netlify/functions/research-comps",
@@ -234,7 +228,6 @@ let selectedVehicleId = savedState?.selectedVehicleId || vehicles[0]?.id || null
 let lastImportSummary = savedState?.lastImportSummary || null;
 let savedMappingPresets = savedState?.savedMappingPresets || {};
 let buyingCosts = { ...DEFAULT_BUYING_COSTS, ...(savedState?.buyingCosts || {}) };
-let riskBuffers = { ...DEFAULT_RISK_BUFFERS, ...(savedState?.riskBuffers || {}) };
 let pendingImport = null;
 const autoResearchInFlight = new Set();
 
@@ -410,7 +403,6 @@ function loadSavedState() {
       lastImportSummary: saved.lastImportSummary || null,
       savedMappingPresets: saved.savedMappingPresets || {},
       buyingCosts: saved.buyingCosts || null,
-      riskBuffers: saved.riskBuffers || null,
       vehicles: saved.vehicles.map(withVehicleDefaults),
     };
   } catch {
@@ -444,7 +436,6 @@ function saveAppState(message) {
       lastImportSummary,
       savedMappingPresets,
       buyingCosts,
-      riskBuffers,
       vehicles,
     }),
   );
@@ -647,96 +638,160 @@ function getComparableSimilarity(comp, vehicle) {
   return { score: Math.min(score, 100), className, label };
 }
 
-function getVehicleRecommendation(vehicle) {
-  const confidence = getValuationConfidence(vehicle);
-  const missingWarnings = [];
-  const riskLevel = getRiskLevel(vehicle);
+function getVehicleRiskAssessment(vehicle) {
+  const reasons = [];
+  let margin = 0;
 
   if (!vehicle.vin) {
-    missingWarnings.push("VIN missing");
-  }
-
-  if (!getRetailValue(vehicle)) {
-    missingWarnings.push("Retail value missing");
+    margin += 500;
+    reasons.push("VIN missing");
   }
 
   if (!getApprovedComparables(vehicle).length) {
-    missingWarnings.push("No approved comps");
+    margin += 1000;
+    reasons.push("No approved comps");
+  }
+
+  if (vehicle.km >= DEFAULT_FILTERS.maxKm) {
+    margin += 1500;
+    reasons.push("Odometer over 150,000 km");
+  } else if (vehicle.km >= 120000) {
+    margin += 700;
+    reasons.push("Higher mileage");
+  }
+
+  if (vehicle.year < DEFAULT_FILTERS.minYear || vehicle.year > DEFAULT_FILTERS.maxYear) {
+    margin += 1200;
+    reasons.push("Outside buying year range");
+  }
+
+  if (vehicle.damageSeverity === "medium") {
+    margin += 1000;
+    reasons.push("Medium damage severity");
+  }
+
+  if (vehicle.damageSeverity === "high") {
+    margin += 3000;
+    reasons.push("High damage severity");
+  }
+
+  if (vehicle.carfaxDisclosures >= 7) {
+    margin += 2500;
+    reasons.push("Seven or more CARFAX disclosures");
+  } else if (vehicle.carfaxDisclosures >= 4) {
+    margin += 1000;
+    reasons.push("Multiple CARFAX disclosures");
+  }
+
+  if (vehicle.carfaxCategories?.titleIssue) {
+    margin += 3000;
+    reasons.push("Title issue");
+  }
+
+  if (vehicle.carfaxCategories?.accidentDamage || vehicle.carfaxCategories?.claims) {
+    margin += 1200;
+    reasons.push("Accident or claim history");
+  }
+
+  if (vehicle.carfaxCategories?.rentalFleet) {
+    margin += 700;
+    reasons.push("Rental or fleet history");
+  }
+
+  if (vehicle.carfaxCategories?.usHistory) {
+    margin += 700;
+    reasons.push("U.S. history");
+  }
+
+  if (vehicle.damageChecks?.structural) {
+    margin += 3000;
+    reasons.push("Structural concern");
+  }
+
+  const visibleDamageCount = Object.values(vehicle.damageChecks || {}).filter(Boolean).length;
+
+  if (visibleDamageCount >= 2) {
+    margin += 1000;
+    reasons.push("Multiple visible damage areas");
+  }
+
+  if (getValuationConfidence(vehicle).score < 60) {
+    margin += 800;
+    reasons.push("Limited pricing confidence");
+  }
+
+  const level = margin >= 3000 ? "high" : margin >= 1000 ? "medium" : "low";
+
+  return {
+    level,
+    margin: roundToHundred(margin),
+    reasons: reasons.length ? reasons : ["No major risk evidence recorded"],
+  };
+}
+
+function getVehicleRecommendation(vehicle) {
+  const confidence = getValuationConfidence(vehicle);
+  const riskAssessment = getVehicleRiskAssessment(vehicle);
+  const bidMath = getBidMath(vehicle);
+  const reasons = [...riskAssessment.reasons];
+
+  if (!getRetailValue(vehicle)) {
+    reasons.unshift("Retail value unavailable");
   }
 
   if (vehicle.reviewStatus === "rejected" || vehicle.reviewStatus === "high-risk") {
     return {
-      action: "red",
+      action: "Pass",
       className: "bad",
+      maxBid: bidMath.maxBid,
+      riskAssessment,
       confidence,
-      explanation: "Risk signals make this a poor buying candidate.",
-      missingWarnings,
+      explanation: "Do not bid until the risk concern is cleared.",
+      reasons,
     };
   }
 
-  if (!vehicleMatchesDefaultRules(vehicle) || riskLevel === "high") {
+  if (!vehicleMatchesDefaultRules(vehicle) || riskAssessment.level === "high" || !getRetailValue(vehicle)) {
     return {
-      action: "red",
+      action: "Pass",
       className: "bad",
+      maxBid: bidMath.maxBid,
+      riskAssessment,
       confidence,
-      explanation: "The vehicle falls outside the buying rules or has high risk signals.",
-      missingWarnings,
+      explanation: "Risk, missing value evidence, or buying-rule fit does not support a bid.",
+      reasons,
     };
   }
 
-  if (confidence.score < 60 || missingWarnings.length || vehicle.reviewStatus === "needs-review") {
+  if (confidence.score < 70 || riskAssessment.level === "medium" || vehicle.reviewStatus === "needs-review") {
     return {
-      action: "yellow",
+      action: "Watch",
       className: "warn",
+      maxBid: bidMath.maxBid,
+      riskAssessment,
       confidence,
-      explanation: "Needs stronger comparable or condition confidence before priority.",
-      missingWarnings,
+      explanation: "Potential buy, but needs stronger comps or condition confirmation.",
+      reasons,
     };
   }
 
   return {
-    action: "green",
+    action: "Bid",
     className: "good",
+    maxBid: bidMath.maxBid,
+    riskAssessment,
     confidence,
-    explanation: "Values, comps, and risk rules support making this a priority candidate.",
-    missingWarnings,
+    explanation: "Value, risk, and confidence support bidding up to the recommended max.",
+    reasons,
   };
 }
 
 function getRiskLevel(vehicle) {
-  const highDamageChecks = vehicle.damageChecks?.structural || vehicle.carfaxCategories?.titleIssue;
-  const mediumCarfax =
-    vehicle.carfaxCategories?.accidentDamage ||
-    vehicle.carfaxCategories?.claims ||
-    vehicle.carfaxCategories?.rentalFleet ||
-    vehicle.carfaxCategories?.usHistory ||
-    vehicle.carfaxCategories?.openRecalls;
-
-  if (
-    vehicle.reviewStatus === "rejected" ||
-    vehicle.reviewStatus === "high-risk" ||
-    vehicle.damageSeverity === "high" ||
-    highDamageChecks ||
-    vehicle.carfaxDisclosures >= 7
-  ) {
-    return "high";
-  }
-
-  if (
-    vehicle.damageSeverity === "medium" ||
-    mediumCarfax ||
-    Object.values(vehicle.damageChecks || {}).filter(Boolean).length >= 2 ||
-    vehicle.carfaxDisclosures >= 4 ||
-    vehicle.km >= DEFAULT_FILTERS.maxKm
-  ) {
-    return "medium";
-  }
-
-  return "low";
+  return getVehicleRiskAssessment(vehicle).level;
 }
 
 function getRiskBuffer(vehicle) {
-  return riskBuffers[getRiskLevel(vehicle)];
+  return getVehicleRiskAssessment(vehicle).margin;
 }
 
 function getBidMath(vehicle) {
@@ -745,6 +800,7 @@ function getBidMath(vehicle) {
   const recon = Number(buyingCosts.recon) || 0;
   const auctionFees = Number(buyingCosts.auctionFees) || 0;
   const riskBuffer = Number(getRiskBuffer(vehicle)) || 0;
+  const expectedCosts = recon + auctionFees;
   const maxBid = retailValue - profit - recon - auctionFees - riskBuffer;
 
   return {
@@ -752,6 +808,7 @@ function getBidMath(vehicle) {
     profit,
     recon,
     auctionFees,
+    expectedCosts,
     riskBuffer,
     maxBid: Math.max(0, roundToHundred(maxBid)),
   };
@@ -859,7 +916,7 @@ function getCompSummary(vehicle) {
       bullets: [
         "Current price guidance is using imported guide values only.",
         "Auction photos and CARFAX are not connected yet, so condition is not affecting this summary.",
-        "When auction APIs are connected, photo and disclosure signals should adjust the condition/risk buffer automatically.",
+        "When auction APIs are connected, photo and disclosure signals should adjust the vehicle risk margin automatically.",
       ],
     };
   }
@@ -891,7 +948,7 @@ function getCompSummary(vehicle) {
 
   const conclusionParts = [
     `Suggested retail is ${formatVerifiedCurrency(suggestedRetail)} because the selected market set averages ${formatCurrency(averageAdjusted)} after adjustments.`,
-    `Suggested max bid is ${formatCurrency(suggestedMaxBid)} after ${formatCurrency(buyingCosts.fixedProfit)} profit, ${formatCurrency(recon.reserve)} recon, ${formatCurrency(buyingCosts.auctionFees)} auction fees, and ${formatCurrency(getRiskBuffer(vehicle))} risk buffer.`,
+    `Suggested max bid is ${formatCurrency(suggestedMaxBid)} after ${formatCurrency(buyingCosts.fixedProfit)} profit, ${formatCurrency(recon.reserve)} recon, ${formatCurrency(buyingCosts.auctionFees)} auction fees, and ${formatCurrency(getRiskBuffer(vehicle))} vehicle risk margin.`,
   ];
 
   if (kmDelta > 10000) {
@@ -919,7 +976,7 @@ function getCompSummary(vehicle) {
   }
 
   bullets.push(
-    "Photo damage and CARFAX disclosures are not automated yet; when auction APIs are connected they should raise or lower the risk buffer before bidding.",
+    "Photo damage and CARFAX disclosures are not automated yet; when auction APIs are connected they should raise or lower the vehicle risk margin before bidding.",
   );
 
   return {
@@ -927,7 +984,7 @@ function getCompSummary(vehicle) {
     title: isPreliminary ? "Preliminary comp summary" : "Approved comp summary",
     narrative: isPreliminary
       ? "Verified listings are loaded, but none have been approved yet. Use this as a first read, then approve the closest comps so they can drive the official consensus."
-      : "Approved comps are now driving the retail read. The suggested bid should stay below the adjusted retail value after profit, recon, auction fees, and risk buffer.",
+      : "Approved comps are now driving the retail read. The suggested bid should stay below the adjusted retail value after profit, recon, auction fees, and vehicle risk margin.",
     conclusion: conclusionParts.join(" "),
     suggestedRetail,
     suggestedMaxBid,
@@ -1464,9 +1521,6 @@ function renderBidSettings() {
   document.querySelectorAll("[data-bid-setting]").forEach((input) => {
     input.value = buyingCosts[input.dataset.bidSetting] ?? 0;
   });
-  document.querySelectorAll("[data-risk-setting]").forEach((input) => {
-    input.value = riskBuffers[input.dataset.riskSetting] ?? 0;
-  });
   document.querySelectorAll("[data-setting-display]").forEach((el) => {
     el.textContent = formatCurrency(buyingCosts[el.dataset.settingDisplay] || 0);
   });
@@ -1537,16 +1591,13 @@ function renderReviewPanel() {
   }
 
   const riskLevel = getRiskLevel(vehicle);
-  const riskClass = riskLevel === "low" ? "good" : riskLevel === "medium" ? "warn" : "bad";
   const bidMath = getBidMath(vehicle);
-  const maxBid = getMaxBid(vehicle);
-  const stretchBid = getStretchBid(vehicle);
   const recommendation = getVehicleRecommendation(vehicle);
-  const flags = getRiskFlags(vehicle);
+  const flags = recommendation.reasons;
   const safeListingUrl = getSafeExternalUrl(vehicle.listingUrl);
-  const carfaxStatus = vehicle.carfaxFileName
-    ? `${vehicle.carfaxFileName} uploaded`
-    : "No CARFAX uploaded";
+  const historyStatus = vehicle.carfaxFileName
+    ? "Vehicle history file uploaded"
+    : "Vehicle history unavailable";
 
   els.reviewPanel.innerHTML = `
     <div class="review-header">
@@ -1555,30 +1606,50 @@ function renderReviewPanel() {
         <h2 class="review-title">${escapeHtml(vehicle.year)} ${escapeHtml(vehicle.make)} ${escapeHtml(vehicle.model)}</h2>
         <div class="review-subtitle">${escapeHtml(vehicle.trim)} | ${escapeHtml(vehicle.auctionSite)} | Run ${escapeHtml(vehicle.runNumber || "Not set")}</div>
       </div>
-      <span class="pill ${riskClass}">${riskLevel.toUpperCase()} RISK</span>
+      <span class="pill ${recommendation.className}">${escapeHtml(recommendation.action)}</span>
     </div>
 
-    <div class="meta-grid">
-      <div class="meta-card">
-        <span>VIN</span>
-        <strong>${escapeHtml(vehicle.vin || "Missing")}</strong>
+    <div class="recommendation-card ${recommendation.className}">
+      <div class="recommendation-topline">
+        <div>
+          <span>Recommended action</span>
+          <strong>${escapeHtml(recommendation.action)}</strong>
+        </div>
+        <div>
+          <span>Recommended maximum bid</span>
+          <strong>${formatCurrency(recommendation.maxBid)}</strong>
+        </div>
       </div>
-      <div class="meta-card">
-        <span>Odometer</span>
-        <strong>${formatKm(vehicle.km)}</strong>
+      <div class="recommendation-metrics">
+        <div>
+          <span>Risk level</span>
+          <strong>${riskLevel.toUpperCase()}</strong>
+        </div>
+        <div>
+          <span>Confidence</span>
+          <strong>${escapeHtml(recommendation.confidence.label)}</strong>
+        </div>
       </div>
-      <div class="meta-card">
-        <span>CARFAX</span>
-        <strong>${vehicle.carfaxFileName ? "Uploaded" : "Needs upload"}</strong>
-      </div>
-      <div class="meta-card">
-        <span>Classification</span>
-        <strong>${escapeHtml(recommendation.action)}</strong>
-      </div>
+      <p>${escapeHtml(recommendation.explanation)}</p>
     </div>
 
-    <div class="review-actions">
-      <button data-review-status="accepted" type="button">${vehicle.reviewStatus === "accepted" ? "Priority selected" : "Mark priority"}</button>
+    <div class="market-snapshot">
+      <div>
+        <span>Estimated retail value</span>
+        <strong>${formatVerifiedCurrency(bidMath.retailValue)}</strong>
+      </div>
+      <div>
+        <span>Target profit</span>
+        <strong>${formatCurrency(bidMath.profit)}</strong>
+      </div>
+      <div>
+        <span>Expected costs</span>
+        <strong>${formatCurrency(bidMath.expectedCosts)}</strong>
+      </div>
+      <div>
+        <span>Vehicle risk margin</span>
+        <strong>${formatCurrency(bidMath.riskBuffer)}</strong>
+      </div>
     </div>
 
     <div class="review-primary-actions">
@@ -1587,55 +1658,40 @@ function renderReviewPanel() {
           ? `<a class="action-link" href="${escapeHtml(safeListingUrl)}" target="_blank" rel="noopener">Open auction listing</a>`
           : `<button class="secondary-button" type="button" disabled>Listing URL missing</button>`
       }
-      <label class="upload-control">
-        <span>Upload CARFAX</span>
-        <input data-carfax-upload type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf" />
-      </label>
-    </div>
-
-    <div class="recommendation-card ${recommendation.className}">
-      <div>
-        <span>App classification</span>
-        <strong>${escapeHtml(recommendation.action)}</strong>
-      </div>
-      <p>${escapeHtml(recommendation.explanation)}</p>
-      <small>${escapeHtml(recommendation.confidence.label)} | ${escapeHtml(carfaxStatus)}</small>
-    </div>
-
-    <div class="market-snapshot">
-      <div>
-        <span>Consensus retail</span>
-        <strong>${formatVerifiedCurrency(bidMath.retailValue)}</strong>
-      </div>
-      <div>
-        <span>Approved comps</span>
-        <strong>${getApprovedComparables(vehicle).length}</strong>
-      </div>
-      <div>
-        <span>Max bid</span>
-        <strong>${formatCurrency(maxBid)}</strong>
-      </div>
-      <div>
-        <span>Stretch</span>
-        <strong>${formatCurrency(stretchBid)}</strong>
-      </div>
+      <button data-review-status="accepted" type="button">${vehicle.reviewStatus === "accepted" ? "Priority selected" : "Mark priority"}</button>
     </div>
 
     <ul class="risk-list">
       ${
         flags.length
           ? flags.map((flag) => `<li>${escapeHtml(flag)}</li>`).join("")
-          : "<li>No major risk flags recorded.</li>"
+          : "<li>No major risk evidence recorded.</li>"
       }
     </ul>
 
+    <div class="integration-status">
+      <div>
+        <span>Photo assessment</span>
+        <strong>Activates after auction photo integration.</strong>
+      </div>
+      <div>
+        <span>Vehicle history</span>
+        <strong>${escapeHtml(historyStatus)}</strong>
+      </div>
+      <div>
+        <span>Dealer history</span>
+        <strong>Unavailable until DMS integration.</strong>
+      </div>
+    </div>
+
     <div class="formula-stack" aria-label="Bid formula">
-      <div class="formula-row"><span>Consensus retail</span><strong>${formatVerifiedCurrency(bidMath.retailValue)}</strong></div>
-      <div class="formula-row"><span>Profit target</span><strong>-${formatCurrency(bidMath.profit)}</strong></div>
-      <div class="formula-row"><span>Recon estimate</span><strong>-${formatCurrency(bidMath.recon)}</strong></div>
-      <div class="formula-row"><span>Auction fees</span><strong>-${formatCurrency(bidMath.auctionFees)}</strong></div>
-      <div class="formula-row"><span>Risk / uncertainty buffer</span><strong>-${formatCurrency(bidMath.riskBuffer)}</strong></div>
-      <div class="formula-row formula-total"><span>Max bid</span><strong>${formatCurrency(bidMath.maxBid)}</strong></div>
+      <div class="formula-row"><span>Estimated retail value</span><strong>${formatVerifiedCurrency(bidMath.retailValue)}</strong></div>
+      <div class="formula-row"><span>Target profit</span><strong>-${formatCurrency(bidMath.profit)}</strong></div>
+      <div class="formula-row"><span>Expected costs</span><strong>-${formatCurrency(bidMath.expectedCosts)}</strong></div>
+      <div class="formula-row formula-sub"><span>Recon reserve</span><strong>${formatCurrency(bidMath.recon)}</strong></div>
+      <div class="formula-row formula-sub"><span>Auction fees</span><strong>${formatCurrency(bidMath.auctionFees)}</strong></div>
+      <div class="formula-row"><span>Vehicle risk margin</span><strong>-${formatCurrency(bidMath.riskBuffer)}</strong></div>
+      <div class="formula-row formula-total"><span>Recommended maximum bid</span><strong>${formatCurrency(bidMath.maxBid)}</strong></div>
     </div>
 
   `;
@@ -2297,7 +2353,6 @@ function resetDemoData() {
   lastImportSummary = null;
   savedMappingPresets = {};
   buyingCosts = { ...DEFAULT_BUYING_COSTS };
-  riskBuffers = { ...DEFAULT_RISK_BUFFERS };
   saveAppState("Demo reset");
   renderVehicles();
   flashButton(els.resetData, "Demo reset");
@@ -2305,7 +2360,6 @@ function resetDemoData() {
 
 function resetBidSettings() {
   buyingCosts = { ...DEFAULT_BUYING_COSTS };
-  riskBuffers = { ...DEFAULT_RISK_BUFFERS };
   saveAppState("Settings reset");
   renderVehicles();
   flashButton(els.resetBidSettings, "Settings reset");
@@ -2852,17 +2906,6 @@ document.querySelectorAll("[data-bid-setting]").forEach((input) => {
     buyingCosts = {
       ...buyingCosts,
       [input.dataset.bidSetting]: parseNumber(input.value),
-    };
-    saveAppState("Settings saved");
-    renderVehicles();
-  });
-});
-
-document.querySelectorAll("[data-risk-setting]").forEach((input) => {
-  input.addEventListener("change", () => {
-    riskBuffers = {
-      ...riskBuffers,
-      [input.dataset.riskSetting]: parseNumber(input.value),
     };
     saveAppState("Settings saved");
     renderVehicles();

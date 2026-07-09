@@ -999,20 +999,58 @@ tbody tr:hover {
   font-weight: 800;
 }
 
+.integration-status {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.integration-status div {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.integration-status span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.integration-status strong {
+  display: block;
+  font-size: 0.82rem;
+  margin-top: 3px;
+}
+
 .recommendation-card {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   margin: 12px 0;
-  padding: 11px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
 }
 
-.recommendation-card div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.recommendation-topline,
+.recommendation-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recommendation-topline div,
+.recommendation-metrics div {
+  background: rgb(255 255 255 / 64%);
+  border: 1px solid rgb(255 255 255 / 54%);
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
 }
 
 .recommendation-card span,
@@ -1024,7 +1062,8 @@ tbody tr:hover {
 }
 
 .recommendation-card strong {
-  text-transform: capitalize;
+  color: var(--text);
+  font-size: 1.08rem;
 }
 
 .recommendation-card p {
@@ -1032,6 +1071,10 @@ tbody tr:hover {
   color: #33424d;
   font-size: 0.8rem;
   font-weight: 800;
+}
+
+.recommendation-topline strong {
+  font-size: 1.45rem;
 }
 
 .recommendation-card.good {
@@ -1073,6 +1116,12 @@ tbody tr:hover {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+.formula-sub {
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding-left: 12px;
 }
 
 .formula-total {

@@ -797,11 +797,25 @@ function getRiskBuffer(vehicle) {
 function getBidMath(vehicle) {
   const retailValue = getRetailValue(vehicle);
   const profit = Number(buyingCosts.fixedProfit) || 0;
-  const recon = Number(buyingCosts.recon) || 0;
+  const reconRecommendation = getReconRecommendation(vehicle);
+  const recon = Number(reconRecommendation.reserve) || 0;
   const auctionFees = Number(buyingCosts.auctionFees) || 0;
   const riskBuffer = Number(getRiskBuffer(vehicle)) || 0;
   const expectedCosts = recon + auctionFees;
   const maxBid = retailValue - profit - recon - auctionFees - riskBuffer;
+  const expectedCostItems = [
+    {
+      label: "Base recon reserve",
+      amount: Number(buyingCosts.recon) || 0,
+      reason: "Default allowance for safety, cleanup, inspection, and retail-ready prep.",
+    },
+    ...reconRecommendation.adjustments,
+    {
+      label: "Auction fees",
+      amount: auctionFees,
+      reason: "Default buyer fee estimate from bid settings.",
+    },
+  ];
 
   return {
     retailValue,
@@ -809,6 +823,7 @@ function getBidMath(vehicle) {
     recon,
     auctionFees,
     expectedCosts,
+    expectedCostItems,
     riskBuffer,
     maxBid: Math.max(0, roundToHundred(maxBid)),
   };
@@ -850,30 +865,56 @@ function getReconRecommendation(vehicle, priceSpread = 0) {
   const baseRecon = Number(buyingCosts.recon) || 0;
   const riskLevel = getRiskLevel(vehicle);
   let reserve = baseRecon;
+  const adjustments = [];
   const recommendations = [];
 
   if (Number(vehicle.km) > 120000) {
     reserve += 500;
+    adjustments.push({
+      label: "Higher-km allowance",
+      amount: 500,
+      reason: "Odometer is over 120,000 km.",
+    });
     recommendations.push("Higher-kilometre unit: inspect brakes, tires, suspension noise, fluids, and warning lights before stretching the bid.");
   }
 
   if (Number(vehicle.year) <= 2017) {
     reserve += 400;
+    adjustments.push({
+      label: "Age allowance",
+      amount: 400,
+      reason: "Older model year increases safety and cosmetic uncertainty.",
+    });
     recommendations.push("Older model year: hold extra room for age-related safety items and cosmetic cleanup.");
   }
 
   if (riskLevel === "medium") {
     reserve += 600;
+    adjustments.push({
+      label: "Medium-risk allowance",
+      amount: 600,
+      reason: "Condition or history signals need verification.",
+    });
     recommendations.push("Medium risk signals: keep extra recon room until photos, announcements, and disclosures are verified.");
   }
 
   if (riskLevel === "high") {
     reserve += 1500;
+    adjustments.push({
+      label: "High-risk allowance",
+      amount: 1500,
+      reason: "High-risk signals require a larger repair reserve.",
+    });
     recommendations.push("High risk signals: price this as a cautious buy or remove it unless the auction photos prove the concern is minor.");
   }
 
   if (priceSpread > 3000) {
     reserve += 500;
+    adjustments.push({
+      label: "Market-spread allowance",
+      amount: 500,
+      reason: "Comparable prices have a wide spread.",
+    });
     recommendations.push("Wide comp spread: use the lower side of the market until condition quality is confirmed.");
   }
 
@@ -887,6 +928,7 @@ function getReconRecommendation(vehicle, priceSpread = 0) {
 
   return {
     reserve: roundToHundred(reserve),
+    adjustments,
     recommendations,
   };
 }
@@ -1649,6 +1691,29 @@ function renderReviewPanel() {
       <div>
         <span>Vehicle risk margin</span>
         <strong>${formatCurrency(bidMath.riskBuffer)}</strong>
+      </div>
+    </div>
+
+    <div class="cost-breakdown">
+      <div class="cost-breakdown-header">
+        <div>
+          <span>Expected costs breakdown</span>
+          <strong>${formatCurrency(bidMath.expectedCosts)}</strong>
+        </div>
+        <small>These are rough buying assumptions until auction photos, vehicle history, and final invoices are connected.</small>
+      </div>
+      <div class="cost-breakdown-list">
+        ${bidMath.expectedCostItems
+          .map(
+            (item) => `
+              <div>
+                <span>${escapeHtml(item.label)}</span>
+                <p>${escapeHtml(item.reason)}</p>
+                <strong>${formatCurrency(item.amount)}</strong>
+              </div>
+            `,
+          )
+          .join("")}
       </div>
     </div>
 

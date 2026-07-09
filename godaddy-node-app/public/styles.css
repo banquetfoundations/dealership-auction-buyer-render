@@ -919,6 +919,74 @@ tbody tr:hover {
   font-size: 1.05rem;
 }
 
+.cost-breakdown {
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.cost-breakdown-header {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto 1fr;
+}
+
+.cost-breakdown-header span,
+.cost-breakdown-list span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.cost-breakdown-header strong {
+  display: block;
+  font-size: 1.2rem;
+  margin-top: 2px;
+}
+
+.cost-breakdown-header small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.cost-breakdown-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cost-breakdown-list div {
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.4fr) auto;
+  padding: 9px 10px;
+}
+
+.cost-breakdown-list p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.cost-breakdown-list strong {
+  font-size: 0.95rem;
+  justify-self: end;
+}
+
 .review-form {
   display: grid;
   gap: 12px;
@@ -1944,6 +2012,15 @@ tbody tr:hover {
   .last-import-panel,
   .last-import-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .cost-breakdown-header,
+  .cost-breakdown-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .cost-breakdown-list strong {
+    justify-self: start;
   }
 
   .workspace-grid,

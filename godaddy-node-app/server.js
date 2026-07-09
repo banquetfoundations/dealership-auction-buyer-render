@@ -4,7 +4,7 @@ const http = require("http");
 const path = require("path");
 
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
 
@@ -198,7 +198,7 @@ async function handleResearchComps(req, res) {
 
   if (!process.env.OPENAI_API_KEY) {
     sendJson(res, 500, {
-      error: "OPENAI_API_KEY is not configured in cPanel Application Manager.",
+      error: "OPENAI_API_KEY is not configured on the server.",
       comparables: [],
     });
     return;

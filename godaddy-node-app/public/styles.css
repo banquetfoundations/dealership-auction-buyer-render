@@ -1617,6 +1617,120 @@ tbody tr:hover {
   margin-top: 3px;
 }
 
+.comp-summary-card {
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 14px 0;
+  padding: 14px;
+}
+
+.comp-summary-card.good {
+  border-left-color: var(--good);
+}
+
+.comp-summary-card.warn {
+  border-left-color: var(--warn);
+}
+
+.comp-summary-card.bad {
+  border-left-color: var(--bad);
+}
+
+.comp-summary-main span,
+.comp-summary-values span,
+.comp-summary-conclusion span,
+.recon-summary span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.comp-summary-main h4 {
+  font-size: 1.05rem;
+  margin: 3px 0 4px;
+}
+
+.comp-summary-main p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.comp-summary-values {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.comp-summary-values div {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.comp-summary-values strong {
+  display: block;
+  font-size: 1.12rem;
+  margin-top: 2px;
+}
+
+.comp-summary-conclusion {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  grid-column: 1 / -1;
+  padding: 11px 12px;
+}
+
+.comp-summary-conclusion p {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+.comp-summary-card > ul {
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  display: grid;
+  gap: 7px;
+  grid-column: 1 / -1;
+  line-height: 1.4;
+  list-style-position: outside;
+  margin: 0;
+  padding: 12px 0 0 18px;
+}
+
+.comp-summary-card > ul li {
+  padding-left: 2px;
+}
+
+.recon-summary {
+  background: #f3f7f5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  grid-column: 1 / -1;
+  padding: 11px 12px;
+}
+
+.recon-summary ul {
+  display: grid;
+  gap: 7px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
 .research-actions {
   align-items: center;
   display: flex;
@@ -1785,6 +1899,7 @@ tbody tr:hover {
 
   .workspace-grid,
   .valuation-grid,
+  .comp-summary-card,
   .outcome-grid,
   .learning-grid,
   .form-grid,

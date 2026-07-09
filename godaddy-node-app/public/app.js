@@ -757,6 +757,186 @@ function getBidMath(vehicle) {
   };
 }
 
+function getMaxBidFromRetail(retailValue, vehicle, reconOverride = buyingCosts.recon) {
+  const profit = Number(buyingCosts.fixedProfit) || 0;
+  const recon = Number(reconOverride) || 0;
+  const auctionFees = Number(buyingCosts.auctionFees) || 0;
+  const riskBuffer = Number(getRiskBuffer(vehicle)) || 0;
+
+  return Math.max(0, roundToHundred(retailValue - profit - recon - auctionFees - riskBuffer));
+}
+
+function getTrimMatchCount(vehicle, comparables) {
+  const trim = String(vehicle.trim || "").trim().toLowerCase();
+
+  if (!trim) {
+    return 0;
+  }
+
+  return comparables.filter((comp) =>
+    String(comp.modelTrim || "").toLowerCase().includes(trim),
+  ).length;
+}
+
+function formatDifference(value, unit = "") {
+  if (!Number.isFinite(value) || value === 0) {
+    return `same${unit ? ` ${unit}` : ""}`;
+  }
+
+  const direction = value > 0 ? "higher" : "lower";
+  const amount = Math.abs(Math.round(value));
+
+  return `${new Intl.NumberFormat("en-CA").format(amount)}${unit ? ` ${unit}` : ""} ${direction}`;
+}
+
+function getReconRecommendation(vehicle, priceSpread = 0) {
+  const baseRecon = Number(buyingCosts.recon) || 0;
+  const riskLevel = getRiskLevel(vehicle);
+  let reserve = baseRecon;
+  const recommendations = [];
+
+  if (Number(vehicle.km) > 120000) {
+    reserve += 500;
+    recommendations.push("Higher-kilometre unit: inspect brakes, tires, suspension noise, fluids, and warning lights before stretching the bid.");
+  }
+
+  if (Number(vehicle.year) <= 2017) {
+    reserve += 400;
+    recommendations.push("Older model year: hold extra room for age-related safety items and cosmetic cleanup.");
+  }
+
+  if (riskLevel === "medium") {
+    reserve += 600;
+    recommendations.push("Medium risk signals: keep extra recon room until photos, announcements, and disclosures are verified.");
+  }
+
+  if (riskLevel === "high") {
+    reserve += 1500;
+    recommendations.push("High risk signals: price this as a cautious buy or remove it unless the auction photos prove the concern is minor.");
+  }
+
+  if (priceSpread > 3000) {
+    reserve += 500;
+    recommendations.push("Wide comp spread: use the lower side of the market until condition quality is confirmed.");
+  }
+
+  if (!recommendations.length) {
+    recommendations.push("Standard recon reserve looks reasonable for now, but confirm tires, brakes, windshield, keys, paintwork, and interior wear before bidding.");
+  }
+
+  recommendations.push(
+    "When auction APIs are connected, damage photos and CARFAX disclosures should adjust this reserve automatically.",
+  );
+
+  return {
+    reserve: roundToHundred(reserve),
+    recommendations,
+  };
+}
+
+function getCompSummary(vehicle) {
+  const approvedComps = getApprovedComparables(vehicle);
+  const verifiedComps = vehicle.comparables.filter(hasComparableEvidence);
+  const summaryComps = approvedComps.length ? approvedComps : verifiedComps;
+  const isPreliminary = !approvedComps.length;
+  const consensusRetail = getConsensusRetailValue(vehicle);
+
+  if (!summaryComps.length) {
+    const bidMath = getBidMath(vehicle);
+    const recon = getReconRecommendation(vehicle);
+
+    return {
+      className: "neutral",
+      title: "Waiting for verified comps",
+      narrative:
+        "Once live listings return with price, VIN, and clickable source links, this section will explain how the auction vehicle compares and what retail and max bid should be considered.",
+      conclusion:
+        "Do not rely on this as a final market price yet. The app needs verified active listings before it can defend the retail number.",
+      suggestedRetail: consensusRetail,
+      suggestedMaxBid: getMaxBidFromRetail(consensusRetail, vehicle, recon.reserve) || bidMath.maxBid,
+      reconReserve: recon.reserve,
+      reconRecommendations: recon.recommendations,
+      bullets: [
+        "Current price guidance is using imported guide values only.",
+        "Auction photos and CARFAX are not connected yet, so condition is not affecting this summary.",
+        "When auction APIs are connected, photo and disclosure signals should adjust the condition/risk buffer automatically.",
+      ],
+    };
+  }
+
+  const adjustedValues = summaryComps.map((comp) => getComparableAdjustedValue(comp));
+  const averageAdjusted = roundToHundred(getAverage(adjustedValues));
+  const suggestedRetail = approvedComps.length
+    ? consensusRetail || averageAdjusted
+    : averageAdjusted || consensusRetail;
+  const averageKm = getAverage(summaryComps.map((comp) => comp.km));
+  const averageYear = getAverage(summaryComps.map((comp) => comp.year));
+  const kmDelta = Number(vehicle.km) - averageKm;
+  const yearDelta = Number(vehicle.year) - averageYear;
+  const trimMatches = getTrimMatchCount(vehicle, summaryComps);
+  const priceSpread = Math.max(...adjustedValues) - Math.min(...adjustedValues);
+  const recon = getReconRecommendation(vehicle, priceSpread);
+  const suggestedMaxBid = getMaxBidFromRetail(suggestedRetail, vehicle, recon.reserve);
+  const closestComp = [...summaryComps].sort(
+    (a, b) => getComparableSimilarity(b, vehicle).score - getComparableSimilarity(a, vehicle).score,
+  )[0];
+  const closestSimilarity = closestComp ? getComparableSimilarity(closestComp, vehicle) : null;
+
+  const className =
+    approvedComps.length >= 3 && priceSpread <= 3000
+      ? "good"
+      : summaryComps.length >= 2
+        ? "warn"
+        : "neutral";
+
+  const conclusionParts = [
+    `Suggested retail is ${formatVerifiedCurrency(suggestedRetail)} because the selected market set averages ${formatCurrency(averageAdjusted)} after adjustments.`,
+    `Suggested max bid is ${formatCurrency(suggestedMaxBid)} after ${formatCurrency(buyingCosts.fixedProfit)} profit, ${formatCurrency(recon.reserve)} recon, ${formatCurrency(buyingCosts.auctionFees)} auction fees, and ${formatCurrency(getRiskBuffer(vehicle))} risk buffer.`,
+  ];
+
+  if (kmDelta > 10000) {
+    conclusionParts.push("The auction vehicle has meaningfully higher kilometres than the comp set, so the bid should stay conservative.");
+  } else if (kmDelta < -10000) {
+    conclusionParts.push("The auction vehicle has lower kilometres than the comp set, so it may justify pricing closer to the stronger comps.");
+  }
+
+  const bullets = [
+    `${summaryComps.length} verified comp${summaryComps.length === 1 ? "" : "s"} considered${isPreliminary ? " before approval" : " in the approved set"}.`,
+    `This vehicle has about ${formatDifference(kmDelta, "km")} than the comp average.`,
+    `Model year is ${formatDifference(yearDelta, "year")} than the comp average.`,
+    trimMatches
+      ? `${trimMatches} comp${trimMatches === 1 ? "" : "s"} appear to match the selected trim/package.`
+      : "Trim/package is not clearly matched yet, so approve only the closest listings.",
+    priceSpread
+      ? `Adjusted comp spread is ${formatCurrency(priceSpread)}, so use the low end if condition is uncertain.`
+      : "Comp spread is not available yet.",
+  ];
+
+  if (closestComp && closestSimilarity) {
+    bullets.push(
+      `Closest current comp is ${closestComp.source} at ${closestSimilarity.score}% similarity.`,
+    );
+  }
+
+  bullets.push(
+    "Photo damage and CARFAX disclosures are not automated yet; when auction APIs are connected they should raise or lower the risk buffer before bidding.",
+  );
+
+  return {
+    className,
+    title: isPreliminary ? "Preliminary comp summary" : "Approved comp summary",
+    narrative: isPreliminary
+      ? "Verified listings are loaded, but none have been approved yet. Use this as a first read, then approve the closest comps so they can drive the official consensus."
+      : "Approved comps are now driving the retail read. The suggested bid should stay below the adjusted retail value after profit, recon, auction fees, and risk buffer.",
+    conclusion: conclusionParts.join(" "),
+    suggestedRetail,
+    suggestedMaxBid,
+    reconReserve: recon.reserve,
+    reconRecommendations: recon.recommendations,
+    bullets,
+  };
+}
+
 function getMaxBid(vehicle) {
   return getBidMath(vehicle).maxBid;
 }
@@ -1476,6 +1656,7 @@ function renderValuationPanel() {
   const confidence = getValuationConfidence(vehicle);
   const approvedCount = getApprovedComparables(vehicle).length;
   const bidMath = getBidMath(vehicle);
+  const compSummary = getCompSummary(vehicle);
   const researchClass =
     vehicle.compResearchStatus === "complete"
       ? "good"
@@ -1557,6 +1738,41 @@ function renderValuationPanel() {
             ? `<small>Last checked ${escapeHtml(vehicle.compResearchUpdatedAt)}</small>`
             : ""
         }
+      </div>
+    </div>
+
+    <div class="comp-summary-card ${compSummary.className}">
+      <div class="comp-summary-main">
+        <span>Comp summary</span>
+        <h4>${escapeHtml(compSummary.title)}</h4>
+        <p>${escapeHtml(compSummary.narrative)}</p>
+      </div>
+      <div class="comp-summary-values">
+        <div>
+          <span>Suggested retail</span>
+          <strong>${formatVerifiedCurrency(compSummary.suggestedRetail)}</strong>
+        </div>
+        <div>
+          <span>Suggested max bid</span>
+          <strong>${formatCurrency(compSummary.suggestedMaxBid)}</strong>
+        </div>
+        <div>
+          <span>Recon reserve</span>
+          <strong>${formatCurrency(compSummary.reconReserve)}</strong>
+        </div>
+      </div>
+      <div class="comp-summary-conclusion">
+        <span>Why this price</span>
+        <p>${escapeHtml(compSummary.conclusion)}</p>
+      </div>
+      <ul>
+        ${compSummary.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+      <div class="recon-summary">
+        <span>Recon recommendations</span>
+        <ul>
+          ${compSummary.reconRecommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
       </div>
     </div>
 

@@ -94,7 +94,6 @@ function hasRequiredEvidence(comp) {
   return (
     comp &&
     comp.source &&
-    comp.vin &&
     /^https?:\/\//i.test(comp.listingUrl || "") &&
     cleanNumber(comp.price) > 0
   );
@@ -214,8 +213,8 @@ function buildPrompt(payload) {
     "4. CARFAX Canada/vehicle-history valuation or listing pages when visible and sourceable.",
     "5. Canadian Black Book-style valuation pages only when an exact public source is available.",
     "6. Kijiji/private marketplace listings only as weak backup comps, never ahead of dealer or verified marketplace listings.",
-    "Only return listings that visibly provide a price, a VIN, and a clickable listing URL.",
-    "Do not invent VINs, prices, URLs, trims, or mileage. If the VIN is not visible, exclude the listing.",
+    "Only return listings that visibly provide a price and a clickable listing URL. VIN is strongly preferred but not required for candidate comps.",
+    "Do not invent VINs, prices, URLs, trims, or mileage. If the VIN is not visible, return an empty VIN and explain VIN missing in evidenceNote.",
     "Every comparable must be a different vehicle. Never return the same listing, same VIN, or same dealer page more than once.",
     "If a search result page contains many listings, open individual listing pages and return only distinct vehicles.",
     "If CarGurus has many matching listings, include multiple distinct CarGurus vehicle detail pages rather than repeating one listing.",

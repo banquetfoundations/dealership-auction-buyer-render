@@ -520,7 +520,7 @@ function getComparableAdjustedValue(comp) {
 }
 
 function hasComparableEvidence(comp) {
-  return Boolean(comp?.vin && getSafeExternalUrl(comp.listingUrl) && Number(comp.price) > 0);
+  return Boolean(comp?.source && getSafeExternalUrl(comp.listingUrl) && Number(comp.price) > 0);
 }
 
 function normalizeComparableUrl(value) {
@@ -2035,7 +2035,7 @@ function renderValuationPanel() {
 
     <div class="comps-wrap">
       <div class="verification-note">
-        Accurate comps must come from live listings or verified imports. Each approved comp needs a price, VIN, and clickable listing link before it affects retail consensus.
+        Accurate comps must come from live listings or verified imports. Price and clickable listing link are required; VIN improves confidence when available.
       </div>
       <table class="comps-table">
         <thead>
@@ -2092,7 +2092,7 @@ function renderValuationPanel() {
               `;
             })
             .join("")
-              : `<tr><td class="empty-state" colspan="12">No verified comps loaded yet. Real comps must include source, price, VIN, and a clickable listing URL before they affect the consensus.</td></tr>`
+              : `<tr><td class="empty-state" colspan="12">No market comps loaded yet. Real comps must include source, price, and a clickable listing URL; VIN should be captured when visible.</td></tr>`
           }
         </tbody>
       </table>
@@ -2485,7 +2485,7 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
       updateVehicleCompResearch(vehicle.id, {
         compResearchStatus: "error",
         compResearchMessage:
-          "No verified comps were returned. Results must include VIN, price, and listing URL.",
+          "No market comps were returned. Results must include source, price, and listing URL.",
         compResearchUpdatedAt: new Date().toLocaleString("en-CA"),
       });
       return;
@@ -2495,9 +2495,14 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
     const newComparables = verifiedComparables.filter((comp) =>
       getComparableKeys(comp).every((key) => !existingKeys.has(key)),
     );
-    const mergedComparables = getUniqueComparables([...vehicle.comparables, ...newComparables]);
+    const existingUniqueComparables = getUniqueComparables(vehicle.comparables);
+    const shouldReplaceWeakSet =
+      existingUniqueComparables.length < 3 && verifiedComparables.length >= existingUniqueComparables.length;
+    const mergedComparables = shouldReplaceWeakSet
+      ? verifiedComparables
+      : getUniqueComparables([...vehicle.comparables, ...newComparables]);
 
-    if (!newComparables.length) {
+    if (!newComparables.length && !shouldReplaceWeakSet) {
       updateVehicleCompResearch(vehicle.id, {
         compResearchStatus: "error",
         compResearchMessage:
@@ -2513,7 +2518,7 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
             ...item,
             comparables: mergedComparables,
             compResearchStatus: "complete",
-            compResearchMessage: `${newComparables.length} unique verified comps loaded. Review and approve the closest matches.`,
+            compResearchMessage: `${mergedComparables.length} market comps loaded. Review and approve the closest matches.`,
             compResearchUpdatedAt: new Date().toLocaleString("en-CA"),
           }
         : item,

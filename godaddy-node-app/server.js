@@ -311,6 +311,66 @@ function postJson(url, headers, body) {
   });
 }
 
+function getOutputText(raw) {
+  return (
+    raw.output_text ||
+    raw.output
+      ?.flatMap((item) => item.content || [])
+      .find((content) => content.type === "output_text")?.text ||
+    ""
+  );
+}
+
+async function runResearchStrategy(payload, strategy) {
+  try {
+    const requestBody = {
+      model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
+      input: buildPrompt(payload, strategy),
+      tools: [{ type: "web_search" }],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "verified_vehicle_comps",
+          strict: true,
+          schema: responseSchema,
+        },
+      },
+    };
+
+    const response = await postJson(
+      OPENAI_API_URL,
+      {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      requestBody
+    );
+    const raw = response.body;
+
+    if (!response.ok) {
+      return {
+        comparables: [],
+        note: `${strategy.label}: ${raw.error?.message || "OpenAI request failed."}`,
+      };
+    }
+
+    const parsed = JSON.parse(getOutputText(raw));
+    const comparables = (parsed.comparables || [])
+      .map(normalizeComparable)
+      .filter(hasRequiredEvidence);
+
+    return {
+      comparables,
+      note: `${strategy.label}: ${parsed.researchNotes || `${comparables.length} candidates`}`,
+    };
+  } catch (error) {
+    return {
+      comparables: [],
+      note: `${strategy.label}: ${error.message || "research pass failed"}`,
+    };
+  }
+}
+
 async function handleResearchComps(req, res) {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -349,59 +409,13 @@ async function handleResearchComps(req, res) {
   }
 
   try {
-    const allComparables = [];
-    const notes = [];
-
-    for (const strategy of researchStrategies) {
-      const requestBody = {
-        model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
-        input: buildPrompt(payload, strategy),
-        tools: [{ type: "web_search" }],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "verified_vehicle_comps",
-            strict: true,
-            schema: responseSchema,
-          },
-        },
-      };
-
-      const response = await postJson(
-        OPENAI_API_URL,
-        {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        requestBody
-      );
-      const raw = response.body;
-
-      if (!response.ok) {
-        notes.push(`${strategy.label}: ${raw.error?.message || "OpenAI request failed."}`);
-        continue;
-      }
-
-      const outputText =
-        raw.output_text ||
-        raw.output
-          ?.flatMap((item) => item.content || [])
-          .find((content) => content.type === "output_text")?.text ||
-        "";
-      const parsed = JSON.parse(outputText);
-      const strategyComparables = (parsed.comparables || [])
-        .map(normalizeComparable)
-        .filter(hasRequiredEvidence);
-
-      allComparables.push(...strategyComparables);
-      notes.push(`${strategy.label}: ${parsed.researchNotes || `${strategyComparables.length} candidates`}`);
-
-      if (uniqueComparables(allComparables).length >= TARGET_COMP_COUNT) {
-        break;
-      }
-    }
-
-    const comparables = uniqueComparables(allComparables);
+    const strategyResults = await Promise.all(
+      researchStrategies.map((strategy) => runResearchStrategy(payload, strategy))
+    );
+    const comparables = uniqueComparables(
+      strategyResults.flatMap((result) => result.comparables)
+    ).slice(0, TARGET_COMP_COUNT);
+    const notes = strategyResults.map((result) => result.note);
 
     sendJson(res, 200, {
       researchNotes: notes.filter(Boolean).join(" | "),

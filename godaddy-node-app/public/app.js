@@ -602,6 +602,7 @@ function getComparableSimilarity(comp, vehicle) {
   const yearDiff = Math.abs((Number(comp.year) || 0) - (Number(vehicle.year) || 0));
   const kmDiff = Math.abs((Number(comp.km) || 0) - (Number(vehicle.km) || 0));
   const kmRatio = vehicle.km ? kmDiff / vehicle.km : 1;
+  const sourceQuality = getComparableSourceQuality(comp);
   let score = 0;
 
   if (yearDiff === 0) {
@@ -632,10 +633,62 @@ function getComparableSimilarity(comp, vehicle) {
     score += 8;
   }
 
+  score += sourceQuality.score;
+
   const className = score >= 76 ? "good" : score >= 55 ? "warn" : "bad";
   const label = score >= 76 ? "Closest" : score >= 55 ? "Usable" : "Weak";
 
-  return { score: Math.min(score, 100), className, label };
+  return { score: Math.min(score, 100), className, label, sourceQuality };
+}
+
+function getComparableSourceQuality(comp) {
+  const combined = `${comp.source || ""} ${comp.listingUrl || ""} ${comp.evidenceNote || ""}`.toLowerCase();
+
+  if (/certified|cpo|toyota\.ca|honda\.ca|ford\.ca|gmcertified|hyundaicertified|kiacertified/.test(combined)) {
+    return {
+      label: "OEM/CPO",
+      score: 14,
+      note: "Certified or OEM inventory source.",
+    };
+  }
+
+  if (/dealer|inventory|autocan|goauto|driveautogroup|autoplanet|carsandcars|motors|mazda|toyota|honda|ford|gm|chevrolet|hyundai|kia|nissan|subaru|volkswagen|vw|lexus|acura|bmw|mercedes|audi/.test(combined)) {
+    return {
+      label: "Dealer direct",
+      score: 12,
+      note: "Dealer inventory source with direct listing evidence.",
+    };
+  }
+
+  if (/autotrader|auto trader|trader\.ca|car gurus|cargurus/.test(combined)) {
+    return {
+      label: "Verified marketplace",
+      score: 10,
+      note: "Major Canadian retail marketplace.",
+    };
+  }
+
+  if (/carfax|black book|canadian black book|cbb/.test(combined)) {
+    return {
+      label: "Valuation/history",
+      score: 8,
+      note: "Valuation or vehicle-history source.",
+    };
+  }
+
+  if (/kijiji|facebook|marketplace|private/.test(combined)) {
+    return {
+      label: "Weak private",
+      score: -8,
+      note: "Private or loose marketplace source; use only as backup.",
+    };
+  }
+
+  return {
+    label: "Unclassified",
+    score: 0,
+    note: "Source quality not identified.",
+  };
 }
 
 function getVehicleRiskAssessment(vehicle) {
@@ -1651,6 +1704,14 @@ function renderReviewPanel() {
       <span class="pill ${recommendation.className}">${escapeHtml(recommendation.action)}</span>
     </div>
 
+    <div class="vin-copy-card">
+      <div>
+        <span>Full VIN</span>
+        <strong>${escapeHtml(vehicle.vin || "Missing VIN")}</strong>
+      </div>
+      <button data-copy-vin type="button" ${vehicle.vin ? "" : "disabled"}>Copy VIN</button>
+    </div>
+
     <div class="recommendation-card ${recommendation.className}">
       <div class="recommendation-topline">
         <div>
@@ -1935,7 +1996,10 @@ function renderValuationPanel() {
                     </button>
                   </td>
                   <td><span class="pill ${similarity.className}">${similarity.score}%</span></td>
-                  <td>${escapeHtml(comp.source)}</td>
+                  <td>
+                    ${escapeHtml(comp.source)}
+                    <small class="source-quality">${escapeHtml(similarity.sourceQuality.label)}</small>
+                  </td>
                   <td>${comp.year}</td>
                   <td>${escapeHtml(comp.modelTrim)}</td>
                   <td>${formatKm(comp.km)}</td>
@@ -2259,7 +2323,15 @@ function getCompResearchPayload(vehicle) {
     },
     requirements: {
       market: "southern Ontario",
-      sources: ["AutoTrader", "CarGurus", "dealer sites"],
+      sources: [
+        "dealer inventory",
+        "OEM certified inventory",
+        "AutoTrader Canada",
+        "CarGurus Canada",
+        "CARFAX Canada",
+        "Canadian Black Book",
+        "Kijiji/private as weak backup only",
+      ],
       requiredFields: ["source", "price", "vin", "listingUrl"],
     },
   };
@@ -2994,7 +3066,14 @@ els.vehicleRows.addEventListener("click", (event) => {
 
 els.reviewPanel.addEventListener("click", async (event) => {
   const statusButton = event.target.closest("[data-review-status]");
+  const copyVinButton = event.target.closest("[data-copy-vin]");
   const selectedVehicle = vehicles.find((vehicle) => vehicle.id === selectedVehicleId);
+
+  if (copyVinButton) {
+    const copied = await copyText(selectedVehicle?.vin || "");
+    flashButton(copyVinButton, copied ? "VIN copied" : "Copy failed");
+    return;
+  }
 
   if (statusButton) {
     const updates = { reviewStatus: statusButton.dataset.reviewStatus };

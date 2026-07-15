@@ -544,27 +544,53 @@ function normalizeComparableUrl(value) {
   }
 }
 
-function getComparableKey(comp) {
+function getComparableKeys(comp) {
   const vin = normalizeVin(comp?.vin);
+  const keys = [];
 
   if (vin.length >= 8) {
-    return `vin:${vin}`;
+    keys.push(`vin:${vin}`);
   }
 
-  return `url:${normalizeComparableUrl(comp?.listingUrl)}`;
+  const normalizedUrl = normalizeComparableUrl(comp?.listingUrl);
+
+  if (normalizedUrl) {
+    keys.push(`url:${normalizedUrl}`);
+  }
+
+  const listingId = String(comp?.listingUrl || "").match(/(?:listing|details|inventory|vehicle|vdp)[=/_-]?([a-z0-9-]{6,})/i)?.[1];
+
+  if (listingId) {
+    keys.push(`listing:${listingId.toLowerCase()}`);
+  }
+
+  const fingerprint = [
+    String(comp?.source || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+    Number(comp?.year) || 0,
+    String(comp?.modelTrim || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+    Math.round((Number(comp?.km) || 0) / 500) * 500,
+    Math.round((Number(comp?.price) || 0) / 100) * 100,
+    String(comp?.location || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+  ].join(":");
+
+  if (fingerprint.replace(/[:0]/g, "")) {
+    keys.push(`fingerprint:${fingerprint}`);
+  }
+
+  return keys;
 }
 
 function getUniqueComparables(comparables) {
   const seen = new Set();
 
   return comparables.filter((comp) => {
-    const key = getComparableKey(comp);
+    const keys = getComparableKeys(comp);
 
-    if (!key || seen.has(key)) {
+    if (!keys.length || keys.some((key) => seen.has(key))) {
       return false;
     }
 
-    seen.add(key);
+    keys.forEach((key) => seen.add(key));
     return true;
   });
 }
@@ -589,7 +615,9 @@ function normalizeResearchComparable(comp, vehicleId, vehicle, index) {
 }
 
 function getApprovedComparables(vehicle) {
-  return vehicle.comparables.filter((comp) => comp.approved && hasComparableEvidence(comp));
+  return getUniqueComparables(
+    vehicle.comparables.filter((comp) => comp.approved && hasComparableEvidence(comp)),
+  );
 }
 
 function getAverage(values) {
@@ -1034,7 +1062,7 @@ function getReconRecommendation(vehicle, priceSpread = 0) {
 
 function getCompSummary(vehicle) {
   const approvedComps = getApprovedComparables(vehicle);
-  const verifiedComps = vehicle.comparables.filter(hasComparableEvidence);
+  const verifiedComps = getUniqueComparables(vehicle.comparables.filter(hasComparableEvidence));
   const summaryComps = approvedComps.length ? approvedComps : verifiedComps;
   const isPreliminary = !approvedComps.length;
   const consensusRetail = getConsensusRetailValue(vehicle);
@@ -1885,6 +1913,7 @@ function renderValuationPanel() {
   const approvedCount = getApprovedComparables(vehicle).length;
   const bidMath = getBidMath(vehicle);
   const compSummary = getCompSummary(vehicle);
+  const uniqueComparables = getUniqueComparables(vehicle.comparables);
   const researchClass =
     vehicle.compResearchStatus === "complete"
       ? "good"
@@ -2027,8 +2056,8 @@ function renderValuationPanel() {
         </thead>
         <tbody>
           ${
-            vehicle.comparables.length
-              ? vehicle.comparables
+            uniqueComparables.length
+              ? uniqueComparables
             .map((comp) => {
               const similarity = getComparableSimilarity(comp, vehicle);
               const hasEvidence = hasComparableEvidence(comp);
@@ -2415,7 +2444,11 @@ function maybeAutoResearchVehicleComps(vehicleId) {
     return;
   }
 
-  if (vehicle.comparables.some(hasComparableEvidence)) {
+  const uniqueVerifiedCompCount = getUniqueComparables(
+    vehicle.comparables.filter(hasComparableEvidence),
+  ).length;
+
+  if (uniqueVerifiedCompCount >= 3) {
     return;
   }
 
@@ -2458,8 +2491,10 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
       return;
     }
 
-    const existingKeys = new Set(vehicle.comparables.map(getComparableKey));
-    const newComparables = verifiedComparables.filter((comp) => !existingKeys.has(getComparableKey(comp)));
+    const existingKeys = new Set(vehicle.comparables.flatMap(getComparableKeys));
+    const newComparables = verifiedComparables.filter((comp) =>
+      getComparableKeys(comp).every((key) => !existingKeys.has(key)),
+    );
     const mergedComparables = getUniqueComparables([...vehicle.comparables, ...newComparables]);
 
     if (!newComparables.length) {

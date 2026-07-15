@@ -125,27 +125,53 @@ function normalizeListingUrl(value) {
   }
 }
 
-function getComparableKey(comp) {
+function getComparableKeys(comp) {
   const vin = normalizeVin(comp.vin);
+  const keys = [];
 
   if (vin.length >= 8) {
-    return `vin:${vin}`;
+    keys.push(`vin:${vin}`);
   }
 
-  return `url:${normalizeListingUrl(comp.listingUrl)}`;
+  const normalizedUrl = normalizeListingUrl(comp.listingUrl);
+
+  if (normalizedUrl) {
+    keys.push(`url:${normalizedUrl}`);
+  }
+
+  const listingId = String(comp.listingUrl || "").match(/(?:listing|details|inventory|vehicle|vdp)[=/_-]?([a-z0-9-]{6,})/i)?.[1];
+
+  if (listingId) {
+    keys.push(`listing:${listingId.toLowerCase()}`);
+  }
+
+  const fingerprint = [
+    String(comp.source || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+    cleanNumber(comp.year),
+    String(comp.modelTrim || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+    Math.round(cleanNumber(comp.km) / 500) * 500,
+    Math.round(cleanNumber(comp.price) / 100) * 100,
+    String(comp.location || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+  ].join(":");
+
+  if (fingerprint.replace(/[:0]/g, "")) {
+    keys.push(`fingerprint:${fingerprint}`);
+  }
+
+  return keys;
 }
 
 function uniqueComparables(comparables) {
   const seen = new Set();
 
   return comparables.filter((comp) => {
-    const key = getComparableKey(comp);
+    const keys = getComparableKeys(comp);
 
-    if (!key || seen.has(key)) {
+    if (!keys.length || keys.some((key) => seen.has(key))) {
       return false;
     }
 
-    seen.add(key);
+    keys.forEach((key) => seen.add(key));
     return true;
   });
 }
@@ -193,7 +219,9 @@ function buildPrompt(payload) {
     "Every comparable must be a different vehicle. Never return the same listing, same VIN, or same dealer page more than once.",
     "If a search result page contains many listings, open individual listing pages and return only distinct vehicles.",
     "If CarGurus has many matching listings, include multiple distinct CarGurus vehicle detail pages rather than repeating one listing.",
-    "Prefer same year, make, model, trim/package, drivetrain, Ontario listings, and mileage within 25,000 km.",
+    "Compromise rules when exact trim is sparse: first same trim/package; then same generation/body/drivetrain with adjacent trims; then +/- 1 model year with similar mileage; then same model with a clear adjustment.",
+    "For Honda Civic EX-T/EXT, treat EX-T, EX T, EXT, EX, Touring, LX turbo, sedan/coupe body style, and 2017-2019 Civic listings as potential backup comps only when exact EX-T comps are limited. Explain the compromise in evidenceNote.",
+    "Prefer same year, make, model, trim/package, drivetrain, Ontario listings, and mileage within 25,000 km, but do not repeat one exact listing just to fill spots.",
     "Use the evidenceNote to say why the comp is strong or weak, including source quality, trim match, km difference, and location.",
     "The adjustment should be a simple retail-value adjustment versus the target vehicle for mileage/year/trim differences. Use 0 if unsure.",
     "Return JSON only in the requested schema.",

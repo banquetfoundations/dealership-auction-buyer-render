@@ -8,6 +8,7 @@ const DEFAULT_FILTERS = {
 };
 
 const STORAGE_KEY = "auctionBuyerStateV1";
+const TARGET_COMP_COUNT = 10;
 
 const DEFAULT_BUYING_COSTS = {
   fixedProfit: 3000,
@@ -2399,6 +2400,7 @@ function getCompResearchPayload(vehicle) {
     requirements: {
       market: "southern Ontario",
       workflow: "vin-first identity, then market comparison",
+      targetCompCount: TARGET_COMP_COUNT,
       sources: [
         "dealer inventory",
         "OEM certified inventory",
@@ -2450,7 +2452,7 @@ function maybeAutoResearchVehicleComps(vehicleId) {
     vehicle.comparables.filter(hasComparableEvidence),
   ).length;
 
-  if (uniqueVerifiedCompCount >= 3) {
+  if (uniqueVerifiedCompCount >= TARGET_COMP_COUNT) {
     return;
   }
 

@@ -7,6 +7,7 @@ const OPENAI_API_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4.1-mini";
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
+const TARGET_COMP_COUNT = 12;
 
 const responseSchema = {
   type: "object",
@@ -16,7 +17,7 @@ const responseSchema = {
     researchNotes: { type: "string" },
     comparables: {
       type: "array",
-      maxItems: 8,
+      maxItems: 15,
       items: {
         type: "object",
         additionalProperties: false,
@@ -224,6 +225,10 @@ function buildPrompt(payload) {
     "Every comparable must be a different vehicle. Never return the same listing, same VIN, or same dealer page more than once.",
     "If a search result page contains many listings, open individual listing pages and return only distinct vehicles.",
     "If CarGurus has many matching listings, include multiple distinct CarGurus vehicle detail pages rather than repeating one listing.",
+    `Return a broad option set: aim for ${TARGET_COMP_COUNT} distinct candidate comps when available, not just the closest 3-5.`,
+    "Search in separate buckets before returning: exact trim, trim spelling variants, adjacent trims, dealer inventory, AutoTrader, CarGurus, OEM/CPO, and broader Ontario listings.",
+    "If one source has limited results, continue to another source instead of returning a tiny list.",
+    "Do not stop after finding the first good result. The dealer needs enough options to approve/reject comps manually.",
     "Compromise rules when exact trim is sparse: first same trim/package; then same generation/body/drivetrain with adjacent trims; then +/- 1 model year with similar mileage; then same model with a clear adjustment.",
     "For Honda Civic EX-T/EXT, treat EX-T, EX T, EXT, EX, Touring, LX turbo, sedan/coupe body style, and 2017-2019 Civic listings as potential backup comps only when exact EX-T comps are limited. Explain the compromise in evidenceNote.",
     "Prefer same year, make, model, trim/package, drivetrain, Ontario listings, and mileage within 25,000 km, but do not repeat one exact listing just to fill spots.",

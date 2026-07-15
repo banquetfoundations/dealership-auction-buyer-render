@@ -178,7 +178,10 @@ function uniqueComparables(comparables) {
 
 function normalizeComparable(comp) {
   return {
-    source: String(comp.source || "").trim(),
+    source: String(comp.source || "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[()]/g, "")
+      .trim(),
     vin: normalizeVin(comp.vin),
     listingUrl: String(comp.listingUrl || "").trim(),
     year: cleanNumber(comp.year),

@@ -279,6 +279,8 @@ const els = {
 function withVehicleDefaults(vehicle) {
   const id = vehicle.id || `vehicle-${nextVehicleId++}`;
   const explicitRetailValue = vehicle.marketValue || vehicle.retailValue || 0;
+  const compResearchStatus =
+    vehicle.compResearchStatus === "loading" ? "" : vehicle.compResearchStatus || "";
 
   return {
     id,
@@ -303,8 +305,11 @@ function withVehicleDefaults(vehicle) {
     notes: vehicle.notes || "",
     auctionSite: vehicle.auctionSite || "Unknown",
     listingUrl: vehicle.listingUrl || "",
-    compResearchStatus: vehicle.compResearchStatus || "",
-    compResearchMessage: vehicle.compResearchMessage || "",
+    compResearchStatus,
+    compResearchMessage:
+      vehicle.compResearchStatus === "loading"
+        ? "Previous comp search was interrupted. Retrying automatically."
+        : vehicle.compResearchMessage || "",
     compResearchUpdatedAt: vehicle.compResearchUpdatedAt || "",
     carfaxFileName: vehicle.carfaxFileName || "",
     carfaxUploadedAt: vehicle.carfaxUploadedAt || "",

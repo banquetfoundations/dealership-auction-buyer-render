@@ -252,12 +252,22 @@ const researchStrategies = [
   {
     label: "Major marketplace sweep",
     instructions:
-      "Search AutoTrader Canada, CarGurus Canada, and broad indexed retail listings for distinct active market options. Include candidates even when VIN is hidden if price and listing URL are visible.",
+      "Search AutoTrader Canada and broad indexed retail listings for distinct active market options. Include candidates even when VIN is hidden if price and listing URL are visible.",
   },
   {
-    label: "Widened trim and dealer inventory sweep",
+    label: "CarGurus focused sweep",
     instructions:
-      "Search dealer inventory, OEM/CPO pages, trim spelling variants, adjacent trims, +/- 1 model year, and broader Ontario inventory. Include adjusted broader-trim candidates when exact trim is sparse.",
+      "Search CarGurus Canada specifically for exact trim, spelling variants, adjacent trims, and +/- 1 model year. Return distinct CarGurus vehicle detail pages or sourceable listing pages; do not repeat one listing.",
+  },
+  {
+    label: "Dealer and OEM inventory sweep",
+    instructions:
+      "Search official dealer inventory pages and OEM/CPO inventory for the target model in Ontario. Prioritize listing pages with price, mileage, location, trim, and URL.",
+  },
+  {
+    label: "Widened trim and backup market sweep",
+    instructions:
+      "Search trim spelling variants, adjacent trims, +/- 1 model year, broader Ontario inventory, and lower-confidence marketplace/private listings as backup. Include adjusted broader-trim candidates when exact trim is sparse.",
   },
 ];
 

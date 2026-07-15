@@ -516,8 +516,46 @@ function getRetailValue(vehicle) {
   return getConsensusRetailValue(vehicle);
 }
 
-function getComparableAdjustedValue(comp) {
-  return (Number(comp.price) || 0) + (Number(comp.adjustment) || 0);
+function getComparableAdjustedValue(comp, vehicle) {
+  return (Number(comp.price) || 0) + getComparableTotalAdjustment(comp, vehicle);
+}
+
+function getComparableTotalAdjustment(comp, vehicle) {
+  return (Number(comp.adjustment) || 0) + getComparableTrimAdjustment(comp, vehicle);
+}
+
+function normalizeTrimText(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function getComparableTrimMatch(comp, vehicle) {
+  const targetTrim = normalizeTrimText(vehicle?.trim);
+  const compTrim = normalizeTrimText(comp?.modelTrim);
+
+  if (!targetTrim || !compTrim) {
+    return { label: "Unknown trim", className: "warn", adjustment: -750 };
+  }
+
+  if (compTrim.includes(targetTrim)) {
+    return { label: "Exact trim", className: "good", adjustment: 0 };
+  }
+
+  const targetTokens = targetTrim.split(" ").filter((token) => token.length > 1);
+  const sharedTokens = targetTokens.filter((token) => compTrim.includes(token));
+
+  if (sharedTokens.length) {
+    return { label: "Related trim", className: "warn", adjustment: -750 };
+  }
+
+  if (vehicle?.model && compTrim.includes(normalizeTrimText(vehicle.model))) {
+    return { label: "Model comp", className: "warn", adjustment: -1500 };
+  }
+
+  return { label: "Broad comp", className: "bad", adjustment: -2500 };
+}
+
+function getComparableTrimAdjustment(comp, vehicle) {
+  return getComparableTrimMatch(comp, vehicle).adjustment;
 }
 
 function hasComparableEvidence(comp) {
@@ -633,7 +671,7 @@ function getAverage(values) {
 
 function getApprovedComparableAverage(vehicle) {
   return getAverage(
-    getApprovedComparables(vehicle).map((comp) => getComparableAdjustedValue(comp)),
+    getApprovedComparables(vehicle).map((comp) => getComparableAdjustedValue(comp, vehicle)),
   );
 }
 
@@ -1091,7 +1129,7 @@ function getCompSummary(vehicle) {
     };
   }
 
-  const adjustedValues = summaryComps.map((comp) => getComparableAdjustedValue(comp));
+  const adjustedValues = summaryComps.map((comp) => getComparableAdjustedValue(comp, vehicle));
   const averageAdjusted = roundToHundred(getAverage(adjustedValues));
   const suggestedRetail = approvedComps.length
     ? consensusRetail || averageAdjusted
@@ -2061,6 +2099,8 @@ function renderValuationPanel() {
               ? uniqueComparables
             .map((comp) => {
               const similarity = getComparableSimilarity(comp, vehicle);
+              const trimMatch = getComparableTrimMatch(comp, vehicle);
+              const totalAdjustment = getComparableTotalAdjustment(comp, vehicle);
               const hasEvidence = hasComparableEvidence(comp);
               const safeListingUrl = getSafeExternalUrl(comp.listingUrl);
 
@@ -2077,7 +2117,10 @@ function renderValuationPanel() {
                     <small class="source-quality">${escapeHtml(similarity.sourceQuality.label)}</small>
                   </td>
                   <td>${comp.year}</td>
-                  <td>${escapeHtml(comp.modelTrim)}</td>
+                  <td>
+                    ${escapeHtml(comp.modelTrim)}
+                    <small class="source-quality ${trimMatch.className}">${escapeHtml(trimMatch.label)}</small>
+                  </td>
                   <td>${formatKm(comp.km)}</td>
                   <td>${escapeHtml(comp.location)}</td>
                   <td><span class="vin-cell">${escapeHtml(comp.vin || "Missing")}</span></td>
@@ -2087,8 +2130,8 @@ function renderValuationPanel() {
                       : "Missing"
                   }</td>
                   <td class="money">${formatCurrency(comp.price)}</td>
-                  <td class="money">${formatSignedCurrency(comp.adjustment)}</td>
-                  <td class="money">${formatCurrency(getComparableAdjustedValue(comp))}</td>
+                  <td class="money">${formatSignedCurrency(totalAdjustment)}</td>
+                  <td class="money">${formatCurrency(getComparableAdjustedValue(comp, vehicle))}</td>
                 </tr>
               `;
             })

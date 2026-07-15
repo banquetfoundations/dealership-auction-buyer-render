@@ -230,6 +230,8 @@ function buildPrompt(payload) {
     "If one source has limited results, continue to another source instead of returning a tiny list.",
     "Do not stop after finding the first good result. The dealer needs enough options to approve/reject comps manually.",
     "Compromise rules when exact trim is sparse: first same trim/package; then same generation/body/drivetrain with adjacent trims; then +/- 1 model year with similar mileage; then same model with a clear adjustment.",
+    "Include broader trims as candidate comps when exact trim inventory is limited. Do not discard them; mark them as adjusted comps and explain the trim/package difference.",
+    "Use adjustment to normalize broader trims back toward the target vehicle value. A lower trim should usually receive a positive adjustment if the target is better equipped; a higher trim should usually receive a negative adjustment.",
     "For Honda Civic EX-T/EXT, treat EX-T, EX T, EXT, EX, Touring, LX turbo, sedan/coupe body style, and 2017-2019 Civic listings as potential backup comps only when exact EX-T comps are limited. Explain the compromise in evidenceNote.",
     "Prefer same year, make, model, trim/package, drivetrain, Ontario listings, and mileage within 25,000 km, but do not repeat one exact listing just to fill spots.",
     "Use the evidenceNote to say why the comp is strong or weak, including source quality, trim match, km difference, and location.",

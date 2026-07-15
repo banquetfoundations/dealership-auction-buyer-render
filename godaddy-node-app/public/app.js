@@ -523,6 +523,52 @@ function hasComparableEvidence(comp) {
   return Boolean(comp?.vin && getSafeExternalUrl(comp.listingUrl) && Number(comp.price) > 0);
 }
 
+function normalizeComparableUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    url.hash = "";
+    [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gbraid",
+      "gclid",
+      "fbclid",
+    ].forEach((key) => url.searchParams.delete(key));
+
+    return `${url.hostname.replace(/^www\./, "")}${url.pathname}`.replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return String(value || "").trim().toLowerCase();
+  }
+}
+
+function getComparableKey(comp) {
+  const vin = normalizeVin(comp?.vin);
+
+  if (vin.length >= 8) {
+    return `vin:${vin}`;
+  }
+
+  return `url:${normalizeComparableUrl(comp?.listingUrl)}`;
+}
+
+function getUniqueComparables(comparables) {
+  const seen = new Set();
+
+  return comparables.filter((comp) => {
+    const key = getComparableKey(comp);
+
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeResearchComparable(comp, vehicleId, vehicle, index) {
   return normalizeComparables(
     [
@@ -2396,9 +2442,11 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
   try {
     const result = await requestVerifiedComps(vehicle);
     const rawComparables = Array.isArray(result?.comparables) ? result.comparables : [];
-    const verifiedComparables = rawComparables
-      .map((comp, index) => normalizeResearchComparable(comp, vehicle.id, vehicle, index))
-      .filter(hasComparableEvidence);
+    const verifiedComparables = getUniqueComparables(
+      rawComparables
+        .map((comp, index) => normalizeResearchComparable(comp, vehicle.id, vehicle, index))
+        .filter(hasComparableEvidence),
+    );
 
     if (!verifiedComparables.length) {
       updateVehicleCompResearch(vehicle.id, {
@@ -2410,11 +2458,19 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
       return;
     }
 
-    const existingIds = new Set(vehicle.comparables.map((comp) => comp.listingUrl || comp.vin));
-    const mergedComparables = [
-      ...vehicle.comparables,
-      ...verifiedComparables.filter((comp) => !existingIds.has(comp.listingUrl || comp.vin)),
-    ];
+    const existingKeys = new Set(vehicle.comparables.map(getComparableKey));
+    const newComparables = verifiedComparables.filter((comp) => !existingKeys.has(getComparableKey(comp)));
+    const mergedComparables = getUniqueComparables([...vehicle.comparables, ...newComparables]);
+
+    if (!newComparables.length) {
+      updateVehicleCompResearch(vehicle.id, {
+        compResearchStatus: "error",
+        compResearchMessage:
+          "Research returned only duplicate listings. Try again or widen sources; comps must be distinct vehicles.",
+        compResearchUpdatedAt: new Date().toLocaleString("en-CA"),
+      });
+      return;
+    }
 
     vehicles = vehicles.map((item) =>
       item.id === vehicle.id
@@ -2422,7 +2478,7 @@ async function researchSelectedVehicleComps(vehicleId = selectedVehicleId) {
             ...item,
             comparables: mergedComparables,
             compResearchStatus: "complete",
-            compResearchMessage: `${verifiedComparables.length} verified comps loaded. Review and approve the closest matches.`,
+            compResearchMessage: `${newComparables.length} unique verified comps loaded. Review and approve the closest matches.`,
             compResearchUpdatedAt: new Date().toLocaleString("en-CA"),
           }
         : item,

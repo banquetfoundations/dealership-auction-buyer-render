@@ -100,10 +100,60 @@ function hasRequiredEvidence(comp) {
   );
 }
 
+function normalizeVin(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+function normalizeListingUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    url.hash = "";
+    [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gbraid",
+      "gclid",
+      "fbclid",
+    ].forEach((key) => url.searchParams.delete(key));
+
+    return `${url.hostname.replace(/^www\./, "")}${url.pathname}`.replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return String(value || "").trim().toLowerCase();
+  }
+}
+
+function getComparableKey(comp) {
+  const vin = normalizeVin(comp.vin);
+
+  if (vin.length >= 8) {
+    return `vin:${vin}`;
+  }
+
+  return `url:${normalizeListingUrl(comp.listingUrl)}`;
+}
+
+function uniqueComparables(comparables) {
+  const seen = new Set();
+
+  return comparables.filter((comp) => {
+    const key = getComparableKey(comp);
+
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeComparable(comp) {
   return {
     source: String(comp.source || "").trim(),
-    vin: String(comp.vin || "").trim().toUpperCase(),
+    vin: normalizeVin(comp.vin),
     listingUrl: String(comp.listingUrl || "").trim(),
     year: cleanNumber(comp.year),
     modelTrim: String(comp.modelTrim || "").trim(),
@@ -140,6 +190,9 @@ function buildPrompt(payload) {
     "6. Kijiji/private marketplace listings only as weak backup comps, never ahead of dealer or verified marketplace listings.",
     "Only return listings that visibly provide a price, a VIN, and a clickable listing URL.",
     "Do not invent VINs, prices, URLs, trims, or mileage. If the VIN is not visible, exclude the listing.",
+    "Every comparable must be a different vehicle. Never return the same listing, same VIN, or same dealer page more than once.",
+    "If a search result page contains many listings, open individual listing pages and return only distinct vehicles.",
+    "If CarGurus has many matching listings, include multiple distinct CarGurus vehicle detail pages rather than repeating one listing.",
     "Prefer same year, make, model, trim/package, drivetrain, Ontario listings, and mileage within 25,000 km.",
     "Use the evidenceNote to say why the comp is strong or weak, including source quality, trim match, km difference, and location.",
     "The adjustment should be a simple retail-value adjustment versus the target vehicle for mileage/year/trim differences. Use 0 if unsure.",
@@ -264,9 +317,11 @@ async function handleResearchComps(req, res) {
         .find((content) => content.type === "output_text")?.text ||
       "";
     const parsed = JSON.parse(outputText);
-    const comparables = (parsed.comparables || [])
-      .map(normalizeComparable)
-      .filter(hasRequiredEvidence);
+    const comparables = uniqueComparables(
+      (parsed.comparables || [])
+        .map(normalizeComparable)
+        .filter(hasRequiredEvidence)
+    );
 
     sendJson(res, 200, {
       researchNotes: parsed.researchNotes || "",

@@ -2398,6 +2398,7 @@ function getCompResearchPayload(vehicle) {
     },
     requirements: {
       market: "southern Ontario",
+      workflow: "vin-first identity, then market comparison",
       sources: [
         "dealer inventory",
         "OEM certified inventory",
@@ -2407,7 +2408,8 @@ function getCompResearchPayload(vehicle) {
         "Canadian Black Book",
         "Kijiji/private as weak backup only",
       ],
-      requiredFields: ["source", "price", "vin", "listingUrl"],
+      requiredFields: ["source", "price", "listingUrl"],
+      preferredFields: ["vin", "trim", "drivetrain", "bodyStyle", "evidenceNote"],
     },
   };
 }

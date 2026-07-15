@@ -191,7 +191,7 @@ function normalizeComparable(comp) {
   };
 }
 
-function buildPrompt(payload) {
+function buildPrompt(payload, strategy = {}) {
   const vehicle = payload.vehicle || {};
   const postalCode = vehicle.postalCode || "N6A 1A1";
   const target = `${vehicle.year || ""} ${vehicle.make || ""} ${vehicle.model || ""} ${
@@ -206,6 +206,9 @@ function buildPrompt(payload) {
     `Target VIN: ${vehicle.vin || "unknown"}`,
     `Target km: ${vehicle.km || "unknown"}`,
     `Market/postal code: ${postalCode}`,
+    "",
+    strategy.label ? `Research pass: ${strategy.label}` : "",
+    strategy.instructions ? `Specific instructions: ${strategy.instructions}` : "",
     "",
     "Step 1: Use the target VIN first to identify or validate the exact vehicle trim, engine, drivetrain, body style, and package when public sources expose that information.",
     "Step 2: Search the target VIN directly across CarGurus, AutoTrader, dealer pages, CARFAX Canada, Canadian Black Book, Google-indexed dealer inventory, and auction/listing snippets.",
@@ -239,6 +242,24 @@ function buildPrompt(payload) {
     "Return JSON only in the requested schema.",
   ].join("\n");
 }
+
+const researchStrategies = [
+  {
+    label: "VIN identity and exact trim",
+    instructions:
+      "Start with the VIN and exact year/make/model/trim. Return exact or near-exact comps first, but do not repeat listings.",
+  },
+  {
+    label: "Major marketplace sweep",
+    instructions:
+      "Search AutoTrader Canada, CarGurus Canada, and broad indexed retail listings for distinct active market options. Include candidates even when VIN is hidden if price and listing URL are visible.",
+  },
+  {
+    label: "Widened trim and dealer inventory sweep",
+    instructions:
+      "Search dealer inventory, OEM/CPO pages, trim spelling variants, adjacent trims, +/- 1 model year, and broader Ontario inventory. Include adjusted broader-trim candidates when exact trim is sparse.",
+  },
+];
 
 function postJson(url, headers, body) {
   const parsedUrl = new URL(url);
@@ -317,54 +338,63 @@ async function handleResearchComps(req, res) {
     return;
   }
 
-  const requestBody = {
-    model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
-    input: buildPrompt(payload),
-    tools: [{ type: "web_search" }],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "verified_vehicle_comps",
-        strict: true,
-        schema: responseSchema,
-      },
-    },
-  };
-
   try {
-    const response = await postJson(
-      OPENAI_API_URL,
-      {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      requestBody
-    );
-    const raw = response.body;
+    const allComparables = [];
+    const notes = [];
 
-    if (!response.ok) {
-      sendJson(res, response.status, {
-        error: raw.error?.message || "OpenAI request failed.",
-        comparables: [],
-      });
-      return;
+    for (const strategy of researchStrategies) {
+      const requestBody = {
+        model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
+        input: buildPrompt(payload, strategy),
+        tools: [{ type: "web_search" }],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "verified_vehicle_comps",
+            strict: true,
+            schema: responseSchema,
+          },
+        },
+      };
+
+      const response = await postJson(
+        OPENAI_API_URL,
+        {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        requestBody
+      );
+      const raw = response.body;
+
+      if (!response.ok) {
+        notes.push(`${strategy.label}: ${raw.error?.message || "OpenAI request failed."}`);
+        continue;
+      }
+
+      const outputText =
+        raw.output_text ||
+        raw.output
+          ?.flatMap((item) => item.content || [])
+          .find((content) => content.type === "output_text")?.text ||
+        "";
+      const parsed = JSON.parse(outputText);
+      const strategyComparables = (parsed.comparables || [])
+        .map(normalizeComparable)
+        .filter(hasRequiredEvidence);
+
+      allComparables.push(...strategyComparables);
+      notes.push(`${strategy.label}: ${parsed.researchNotes || `${strategyComparables.length} candidates`}`);
+
+      if (uniqueComparables(allComparables).length >= TARGET_COMP_COUNT) {
+        break;
+      }
     }
 
-    const outputText =
-      raw.output_text ||
-      raw.output
-        ?.flatMap((item) => item.content || [])
-        .find((content) => content.type === "output_text")?.text ||
-      "";
-    const parsed = JSON.parse(outputText);
-    const comparables = uniqueComparables(
-      (parsed.comparables || [])
-        .map(normalizeComparable)
-        .filter(hasRequiredEvidence)
-    );
+    const comparables = uniqueComparables(allComparables);
 
     sendJson(res, 200, {
-      researchNotes: parsed.researchNotes || "",
+      researchNotes: notes.filter(Boolean).join(" | "),
       comparables,
     });
   } catch (error) {
